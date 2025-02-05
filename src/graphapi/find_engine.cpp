@@ -37,6 +37,7 @@
 #include <miopen/graphapi/util.hpp>
 #include <miopen/graphapi/variant_pack.hpp>
 #include <miopen/graphapi/convolution.hpp>
+#include <miopen/graphapi/convolution_forward_executor.hpp>
 #include <miopen/graphapi/conv_bias_res_add_activ_forward_executor.hpp>
 #include <miopen/utility/scope.hpp>
 
@@ -44,6 +45,71 @@ namespace miopen {
 namespace graphapi {
 
 GraphPatternMatcher::~GraphPatternMatcher() = default;
+
+class Convolution_Fwd_Pattern : public GraphPatternMatcher
+{
+    static const OpGraph& getPatternGraph()
+    {
+        static auto graph_gen =
+            PatternGraphGenerator::Make({{"OP_CONVOLUTION_FORWARD", {"X", "W"}, {"T_C_0"}}});
+        return graph_gen->graph();
+    }
+
+public:
+    static std::unique_ptr<GraphPatternMatcher> Make()
+    {
+        return std::make_unique<Convolution_Fwd_Pattern>();
+    }
+
+    std::string_view name() const final
+    {
+        static const std::string_view n{"convolution_fwd"};
+        return n;
+    }
+
+    bool matches(const OpGraph* graph_ptr) const final
+    {
+        assert(graph_ptr);
+        return isIsomorphic(*graph_ptr, getPatternGraph());
+    }
+
+    std::vector<Engine> getEngines(OpGraph* graph_ptr) const override
+    {
+        assert(graph_ptr);
+        assert(matches(graph_ptr));
+        auto& graph = *graph_ptr;
+
+        auto* conv = dynamic_cast<OperationConvolutionForward*>(
+            graph.findOutNeighByName(graph.getSourceNode(), "OP_CONVOLUTION_FORWARD"));
+
+        std::size_t in_c  = conv->getX()->GetLengths()[1];
+        std::size_t wei_c = conv->getW()->GetLengths()[1];
+
+        if(wei_c == std::size_t{0})
+        {
+            MIOPEN_THROW(miopenStatusBadParm,
+                         "invalid weight tensor provided for graph matching Convolution pattern");
+        }
+        else if(in_c % wei_c != std::size_t{0})
+        {
+            MIOPEN_THROW(miopenStatusBadParm,
+                         "invalid group count from input and weight tensor for graph matching "
+                         "Convolution pattern");
+        }
+
+        int groupCount = in_c / wei_c;
+
+        std::shared_ptr<GraphPatternExecutor> exec =
+            std::make_shared<ConvolutionForwardExecutor>(conv->getX(),
+                                                         conv->getW(),
+                                                         conv->getConvolution(),
+                                                         groupCount,
+                                                         conv->getY(),
+                                                         conv->getAlpha(),
+                                                         conv->getBeta());
+        return {EngineBuilder().setGraph(graph_ptr).setExecutor(exec).setGlobalIndex(0).build()};
+    }
+};
 
 class ConvBiasResAddActive_Fwd_Pattern : public GraphPatternMatcher
 {
@@ -1043,6 +1109,7 @@ std::vector<Engine> findEngines(OpGraph* graph)
     patterns.emplace_back(MHA_Fwd_F8_Pattern::Make());
     patterns.emplace_back(MHA_Bwd_F8_Pattern::Make());
     patterns.emplace_back(ConvBiasResAddActive_Fwd_Pattern::Make());
+    patterns.emplace_back(Convolution_Fwd_Pattern::Make());
 
     for(const auto& p : patterns)
     {

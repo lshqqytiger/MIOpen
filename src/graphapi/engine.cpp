@@ -25,6 +25,7 @@
  *******************************************************************************/
 
 #include <miopen/errors.hpp>
+#include <miopen/graphapi/convolution_forward_executor.hpp>
 #include <miopen/graphapi/conv_bias_res_add_activ_forward_executor.hpp>
 #include <miopen/graphapi/engine.hpp>
 #include <miopen/graphapi/opgraph.hpp>
@@ -170,6 +171,8 @@ void from_json(const nlohmann::json& json, Engine& engine)
         name2Maker{
             {GraphExecutorFind20::name,
              std::make_shared<GraphExecutorFind20, const nlohmann::json&>},
+            {ConvolutionForwardExecutor::name,
+             std::make_shared<ConvolutionForwardExecutor, const nlohmann::json&>},
             {ConvBiasResAddActivForwardExecutor::name,
              std::make_shared<ConvBiasResAddActivForwardExecutor, const nlohmann::json&>},
         };

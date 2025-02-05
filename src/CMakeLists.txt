@@ -129,6 +129,7 @@ set( MIOpen_Source
     glu/problem_description.cpp
     glu_api.cpp
     graphapi/convolution.cpp
+    graphapi/convolution_forward_executor.cpp
     graphapi/conv_bias_res_add_activ_forward_executor.cpp
     graphapi/engine.cpp
     graphapi/enginecfg.cpp
